@@ -18,5 +18,9 @@ USAGE
 EXAMPLE
   streamit -p 8081 *.mp3
 
+  (Where *.mp3 expands by your shell to a list of MP3 files encoded at the
+   same bit-rate and audio parameters, otherwise clients streaming the
+   MPEG stream might get confused.)
+
 AUTHOR
   Roy Keene <streamit@rkeene.org>

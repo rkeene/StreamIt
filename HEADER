@@ -2,7 +2,8 @@
 
 Release information:
   pkg:  @@UTIL@@ version @@VERS@@
-  url:  http://www.rkeene.org/devel/@@UTIL@@-@@VERS@@.tar.gz
-  date: @@DATE@@
+  web:  http://www.rkeene.org/oss/@@UTIL@@/
+  url:  http://www.rkeene.org/files/oss/@@UTIL@@/@@UTIL@@-@@VERS@@.tar.gz
+ date:  @@DATE@@
 --------------------------------------------------------------------------
 

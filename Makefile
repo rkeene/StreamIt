@@ -13,8 +13,6 @@ net.o: net.c net.h
 .PHONY: clean install
 install: streamit
 	cp streamit $(prefix)/bin
-	chown root:root $(prefix)/bin/streamit
-	chmod 755 $(prefix)/bin/streamit
 
 clean:
 	rm -f $(OBJS) $(BINS)

@@ -1,5 +1,3 @@
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
@@ -12,10 +10,14 @@
 #include <errno.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "net.h"
 #include "version.h"
 
 extern int errno;
+extern char *optarg;
+extern int optind, opterr, optopt;
 
 #define _STREAMIT_MAX_BLOCK_WAIT 100000
 #define _STREAMIT_MAX_NUM_CONNS 30
@@ -52,25 +54,35 @@ int print_help(void) {
 int main(int argc, char **argv) {
 	struct sockaddr_in peer, peers[_STREAMIT_MAX_NUM_CONNS];
 	char buf[10240], smbuf[256];
-	float percent_served=0.0;
-	int stream_port=-1;
-	int instr_fd=-1, instr_buf_len=0, curr_file=2, clnt_instr_buf_len[_STREAMIT_MAX_NUM_CONNS];
-	int master_fd, sock_fd, sock_cnt=0;
-	int clients[_STREAMIT_MAX_NUM_CONNS], clients_http[_STREAMIT_MAX_NUM_CONNS], clients_cnt=0, clients_cnt_max=-1;
-	int peerlen=sizeof(peer), sockflags, i, x, errcnt[_STREAMIT_MAX_NUM_CONNS], write_res, sock_cnt_serv;
-	int block_backoff=1, block_backoff_total=1;
-	unsigned long backoff_mult=30, backoff_mult_incr=0;
+	float percent_served = 0.0;
+	int stream_port = -1;
+	int instr_fd = -1, instr_buf_len = 0, curr_file = 2, clnt_instr_buf_len[_STREAMIT_MAX_NUM_CONNS];
+	int master_fd, sock_fd, sock_cnt = 0;
+	int clients[_STREAMIT_MAX_NUM_CONNS], clients_http[_STREAMIT_MAX_NUM_CONNS], clients_cnt = 0, clients_cnt_max = -1;
+	int peerlen=sizeof(peer), sockflags, i, x, errcnt[_STREAMIT_MAX_NUM_CONNS], sock_cnt_serv;
+	int write_res, read_res;
+	int block_backoff = 1, block_backoff_total = 1;
+	int no_log = 0;
+	int ch;
+	unsigned long backoff_mult = 30, backoff_mult_incr = 0;
 
 	if (argc < 4) {
 		return(print_help());
 	}
 
-	if (strcmp(argv[1], "-p") != 0) {
-		return(print_help());
+	while ((ch = getopt(argc, argv, "p:q")) != -1) {
+		switch (ch) {
+			case 'p':
+				stream_port = atoi(optarg);
+				break;
+			case 'q':
+				no_log = 1;
+				break;
+			default:
+				return(print_help());
+				break;
+		}
 	}
-
-	/* Determine the port to listen on. */
-	stream_port = atoi(argv[2]);
 
 	if (stream_port <= 0) {
 		return(print_help());
@@ -104,12 +116,12 @@ int main(int argc, char **argv) {
 		sleep(1);
 	}
 	sockflags = fcntl(master_fd, F_GETFL);
-	fcntl(master_fd, F_SETFL, sockflags|O_NONBLOCK);
+	fcntl(master_fd, F_SETFL, sockflags | O_NONBLOCK);
 
 	while (1) {
 		if (instr_buf_len <= 0) {
 			if (argv[++curr_file] == NULL) {
-				curr_file=3;
+				curr_file = 3;
 			}
 
 			if (instr_fd != -1) {
@@ -130,16 +142,17 @@ int main(int argc, char **argv) {
 		sock_fd = accept(master_fd, (struct sockaddr *) &peer, &peerlen);
 		if (sock_fd >= 0) {
 			sockflags = fcntl(sock_fd, F_GETFL);
-			fcntl(sock_fd, F_SETFL, sockflags|O_NONBLOCK);
+			fcntl(sock_fd, F_SETFL, sockflags | O_NONBLOCK);
+
 			/* Locate a suitable location within the arrays. */
 			if (clients[clients_cnt] != -1) {
-				for (i = 0; i < (sizeof(clients)/sizeof(int)); i++) {
+				for (i = 0; i < (sizeof(clients) / sizeof(int)); i++) {
 					if (clients[i] == -1) {
-						clients_cnt=i;
+						clients_cnt = i;
 					}
 				}
 			}
-			if (clients_cnt < (sizeof(clients)/sizeof(int))) {
+			if (clients_cnt < (sizeof(clients) / sizeof(int))) {
 				clients[clients_cnt] = sock_fd;
 				peers[clients_cnt] = peer;
 				clients_http[clients_cnt] = 0;
@@ -177,15 +190,15 @@ int main(int argc, char **argv) {
 
 				/* If the client hasn't recieved an HTTP reply yet, don't talk to it. */
 				if (clients_http[i] == 0) {
-					write_res = read(clients[i], smbuf, sizeof(smbuf));
-					if (write_res > 0) {
+					read_res = read(clients[i], smbuf, sizeof(smbuf));
+					if (read_res > 0) {
 						DEBUG_LOG("Client [fd=%i] recieved HTTP response.", clients[i]);
 						write(clients[i], _STREAMIT_HTTP_RESP, strlen(_STREAMIT_HTTP_RESP));
 						clients_http[i] = 1;
 					}
 
 					clnt_instr_buf_len[i] = 0;
-					write_res = 0;
+					read_res = 0;
 				} else {
 					/* Otherwise pass it the data */
 					write_res = write(clients[i], buf+(instr_buf_len-clnt_instr_buf_len[i]), clnt_instr_buf_len[i]);
@@ -205,9 +218,11 @@ int main(int argc, char **argv) {
 				}
 			}
 			if (sock_cnt_serv == 0) break;
+
 			/* If we haven't served atleast 75% of our sockets, we're going too fast, slow down. */
-			percent_served = (((float) (sock_cnt-sock_cnt_serv))/((float) sock_cnt)) * 100.0;
-			if (percent_served < 75 && x >= (backoff_mult/2)) {
+			percent_served = (((float) (sock_cnt - sock_cnt_serv)) / ((float) sock_cnt)) * 100.0;
+
+			if (percent_served < 75 && x >= (backoff_mult / 2)) {
 				DEBUG_LOG("Percent served: %f; sock_cnt=%i, sock_cnt_serv=%i", percent_served, sock_cnt, sock_cnt_serv);
 				block_backoff_total += 500;
 				if (block_backoff_total > _STREAMIT_MAX_BLOCK_WAIT) {
@@ -225,7 +240,7 @@ int main(int argc, char **argv) {
 		}
 
 		/* If we haven't served atleast 75% of our sockets, we're going too fast, slow down. */
-		percent_served = (((float) (sock_cnt-sock_cnt_serv))/((float) sock_cnt))*100.0;
+		percent_served = (((float) (sock_cnt - sock_cnt_serv)) / ((float) sock_cnt))*100.0;
 		if (percent_served < 75) {
 			DEBUG_LOG("Percent served: %f; sock_cnt=%i, sock_cnt_serv=%i", percent_served, sock_cnt, sock_cnt_serv);
 			backoff_mult += backoff_mult_incr;
