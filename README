@@ -1,0 +1,22 @@
+DESCRIPTION
+  StreamIt is a generic media streamer.  It has no code related to any
+  specific file format or codec, but rather relies on the clients to
+  rate-limit the stream.  It is also uses very minimal CPU, and can be run
+  on a 386 or 486 quite well.
+
+USAGE
+  streamit -p <port> <file> [<file> [<file> [...]]]
+
+  Where "<port>" is the port number to listen on for connections. And "<file>"
+  is the name of a file to stream.
+
+  Note that each file should be in a format that can be concatenated together
+  since they will be shifted through seamlessly, and looped back to the first
+  file.  Also, the file format should be such that a client can pick anywhere
+  in the file and begin to interpret it.
+  
+EXAMPLE
+  streamit -p 8081 *.mp3
+
+AUTHOR
+  Roy Keene <streamit@rkeene.org>

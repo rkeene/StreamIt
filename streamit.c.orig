@@ -1,0 +1,108 @@
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include "net.h"
+
+#ifndef _STREAMIT_TCP_PORT
+#define _STREAMIT_TCP_PORT 113
+#endif
+
+#define _STREAMIT_MAX_BLOCK_WAIT 1000000
+#define _STREAMIT_BLOCK_BACKOFF 250
+#define _STREAMIT_MAX_NUM_CONNS 30
+
+#ifndef _STREAMIT_HTTP_RESP 
+#define _STREAMIT_HTTP_RESP "HTTP/1.1 200 OK\nDate: __DATE__\nServer: StreamIt\nLast-Modified: Tue, 05 Nov 2002 13:08:25 CST\nTransfer-Encoding: chunked\nContent-Type: application/octet-stream\r\n\r\n"
+#endif
+
+void sighandler(int sig) {
+        signal(SIGPIPE, sighandler);
+}
+
+int main(int argc, char **argv) {
+	struct sockaddr_in peer;
+	char buf[512], smbuf[256];
+	int stream_port=_STREAMIT_TCP_PORT;
+	int instr_fd=-1, instr_buf_len=0, curr_file=0, clnt_instr_buf_len[_STREAMIT_MAX_NUM_CONNS];
+	int master_fd, sock_fd;
+	int clients[_STREAMIT_MAX_NUM_CONNS], clients_http[_STREAMIT_MAX_NUM_CONNS], clients_cnt=0, clients_cnt_max=-1;
+	int peerlen=0, sockflags, i, x, err, write_res;
+
+	if (argv[curr_file]==NULL) {
+		fprintf(stderr, "Usage: streamit <files>\n");
+		return(-1);
+	}
+
+        signal(SIGPIPE, sighandler);
+
+	for (i=0;i<(sizeof(clients)/sizeof(int));i++) clients[i]=-1;
+	for (i=0;i<(sizeof(clients_http)/sizeof(int));i++) clients_http[i]=0;
+
+	while ((master_fd=createlisten(stream_port))<0) {
+		perror("createlisten");
+		sleep(1);
+	}
+	sockflags=fcntl(master_fd, F_GETFL);
+	fcntl(master_fd, F_SETFL, sockflags|O_NONBLOCK);
+
+	while (1) {
+		if (instr_buf_len<=0) {
+			if (argv[++curr_file]==NULL) curr_file=1;
+			if (instr_fd!=-1) { close(instr_fd); instr_fd=-1; }
+			if ((instr_fd=open(argv[curr_file], O_RDONLY))<0) {
+				continue;
+			}
+		}
+		instr_buf_len=read(instr_fd, buf, sizeof(buf));
+		if ((sock_fd=accept(master_fd, (struct sockaddr *) &peer, &peerlen))>=0) {
+			sockflags=fcntl(sock_fd, F_GETFL);
+			fcntl(sock_fd, F_SETFL, sockflags|O_NONBLOCK);
+			if (clients[clients_cnt]!=-1) {
+				for (i=0;i<(sizeof(clients)/sizeof(int));i++) {
+					if (clients[i]==-1) clients_cnt=i;
+				}
+			}
+			if (clients_cnt<(sizeof(clients)/sizeof(int))) {
+				clients[clients_cnt]=sock_fd;
+				if (clients_cnt>clients_cnt_max) clients_cnt_max=clients_cnt;
+				clients_cnt++;
+			} else {
+				fprintf(stderr, "Ran out of descriptors.\n");
+			}
+		}
+		for (i=0;i<=clients_cnt_max;i++) {
+			clnt_instr_buf_len=instr_buf_len;
+			if (clients[i]==-1) continue;
+			err=read(clients[i], smbuf, sizeof(smbuf));
+			if (err>0 && !clients_http[i]) {
+				write(clients[i], _STREAMIT_HTTP_RESP, strlen(_STREAMIT_HTTP_RESP));
+			}
+			err=-1;
+			for (x=0;x<(_STREAMIT_MAX_BLOCK_WAIT/_STREAMIT_BLOCK_BACKOFF);x++) {
+				write_res=write(clients[i], buf+(instr_buf_len-clnt_instr_buf_len), clnt_instr_buf_len);
+				if (write_res>=0) {
+					clnt_instr_buf_len-=write_res;
+					if (clnt_instr_buf_len==0) {
+						err=0;
+						break;
+					}
+				}
+				usleep(_STREAMIT_BLOCK_BACKOFF);
+			}
+			if (err<0) {
+				fprintf(stderr, "Closing client, write_res=%i, fd=%i,i=%i: ", write_res, clients[i], i);
+				perror("write");
+				close(clients[i]);
+				clients[i]=-1;
+			}
+		}
+/* This will be replaced with a dynamic wait from tv.usec */
+//		usleep(1000);
+	}
+}

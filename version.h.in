@@ -1,0 +1,6 @@
+#ifndef _STREAMIT_VERSION_H_
+#define _STREAMIT_VERSION_H_
+
+#define VERSION "@@VERS@@"
+
+#endif
