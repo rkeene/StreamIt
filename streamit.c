@@ -129,8 +129,12 @@ int main(int argc, char **argv) {
 				instr_fd = -1;
 			}
 
-			if ((instr_fd = open(argv[curr_file], O_RDONLY)) < 0) {
-				continue;
+			if (strcmp(argv[curr_file], "-") == 0) {
+				instr_fd = fileno(stdin);
+			} else {
+				if ((instr_fd = open(argv[curr_file], O_RDONLY)) < 0) {
+					continue;
+				}
 			}
 			LOG_MSG("Playing %s", argv[curr_file]);
 		}
