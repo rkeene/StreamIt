@@ -47,7 +47,10 @@ void sigpipehandler(int sig) {
 }
 
 int print_help(void) {
-	fprintf(stderr, "Usage: streamit -p port <files>\n");
+	fprintf(stderr, "Usage: streamit [-F] -p port <files>\n");
+	fprintf(stderr, "   -F       Run StreamIt in the foreground\n");
+	fprintf(stderr, "   -p port  Port for StreamIt to listen for connections on.\n");
+	fprintf(stderr, "   <files>  List of files to stream (\"-\" for stdin)\n");
 	return(-1);
 }
 
@@ -61,6 +64,7 @@ int main(int argc, char **argv) {
 	int clients[_STREAMIT_MAX_NUM_CONNS], clients_http[_STREAMIT_MAX_NUM_CONNS], clients_cnt = 0, clients_cnt_max = -1;
 	int peerlen=sizeof(peer), sockflags, i, x, errcnt[_STREAMIT_MAX_NUM_CONNS], sock_cnt_serv;
 	int write_res, read_res;
+	int option_fork = 1;
 	int block_backoff = 1, block_backoff_total = 1;
 	int no_log = 0;
 	int ch;
@@ -70,8 +74,11 @@ int main(int argc, char **argv) {
 		return(print_help());
 	}
 
-	while ((ch = getopt(argc, argv, "p:q")) != -1) {
+	while ((ch = getopt(argc, argv, "Fp:q")) != -1) {
 		switch (ch) {
+			case 'F':
+				option_fork = 0;
+				break;
 			case 'p':
 				stream_port = atoi(optarg);
 				break;
@@ -89,14 +96,16 @@ int main(int argc, char **argv) {
 	}
 
 #ifndef DEBUG
-	if (fork()!=0) {
-		/* Parent */
-		wait(NULL);
-		return(0);
-	} else {
-		/* Child */
-		if (fork()!=0) return(0);
-		/* Grand-child */
+	if (option_fork) {
+		if (fork()!=0) {
+			/* Parent */
+			wait(NULL);
+			return(0);
+		} else {
+			/* Child */
+			if (fork()!=0) return(0);
+			/* Grand-child */
+		}
 	}
 #endif
 
